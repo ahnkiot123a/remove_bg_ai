@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 
 class DashedBorder extends StatefulWidget {
@@ -54,12 +56,33 @@ class _DottedCustomPaint extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // TODO: implement paint
+    final Paint paint = Paint()
+      ..isAntiAlias = true
+      ..filterQuality = FilterQuality.high
+      ..color = color!
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth!;
+    Path path = Path();
+    path.addRRect(RRect.fromLTRBR(0, 0, size.width, size.height, Radius.circular(radius!)));
+    Path draw = buildDashPath(path, dottedLength!, space!);
+    canvas.drawPath(draw, paint);
   }
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) {
-    // TODO: implement shouldRepaint
-    throw UnimplementedError();
+    return true;
+  }
+
+  Path buildDashPath(Path path, double d, double space) {
+    final Path r = Path();
+    for(PathMetric metric in path.computeMetrics()){
+      double start = 0.0;
+      while(start < metric.length){
+        double end = start + d;
+        r.addPath(metric.extractPath(start, end), Offset.zero);
+        start = end + space;
+      }
+    }
+    return r;
   }
 }
