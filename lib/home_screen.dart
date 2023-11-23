@@ -1,16 +1,18 @@
 import 'dart:io';
 import 'dart:typed_data';
-
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:before_after/before_after.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:image_downloader_web/image_downloader_web.dart';
 import 'package:image_gallery_saver/image_gallery_saver.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:remove_bg_ai/api.dart';
 import 'package:remove_bg_ai/dashed_border.dart';
 import 'package:screenshot/screenshot.dart';
+
+import 'helper.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -25,43 +27,50 @@ class _HomeScreenState extends State<HomeScreen> {
   bool removeBg = false;
   bool isLoading = false;
   Uint8List? image;
+  Uint8List? imagePicker;
   String imagePath = '';
   ScreenshotController screenshotController = ScreenshotController();
+  String key = "dGMn4nPexdDZ2yMCM8PaKGqy";
 
   pickImage() async {
     final img = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 100);
     if (img != null) {
       imagePath = img.path;
+      imagePicker = await img.readAsBytes();
       loaded = true;
       setState(() {});
     } else {}
   }
 
   Future<void> downloadImage(BuildContext context) async {
-    var perm = await Permission.photos.request();
     String fileName = "${DateTime.now().microsecondsSinceEpoch}";
-    if (perm.isGranted) {
-      await screenshotController.capture(delay: const Duration(milliseconds: 10)).then((Uint8List? image) async {
-        if (image != null) {
-          final directory = await getApplicationDocumentsDirectory();
-          final imagePath = await File('${directory.path}/image.png').create();
-          await imagePath.writeAsBytes(image);
-          final result = await ImageGallerySaver.saveImage(image, name: fileName);
-          if (!context.mounted) return;
-          if(result['isSuccess']){
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text('Download image success!'),
-              backgroundColor: Colors.green,
-            ));
-          }else{
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text('An error occurred!'),
-              backgroundColor: Colors.red,
-            ));
+    if (kIsWeb) {
+      await WebImageDownloader.downloadImageFromUInt8List(uInt8List: image!, name: fileName);
+    } else {
+      var perm = await Permission.photos.request();
+      if (perm.isGranted) {
+        await screenshotController.capture(delay: const Duration(milliseconds: 10)).then((Uint8List? image) async {
+          if (image != null) {
+            final directory = await getApplicationDocumentsDirectory();
+            final imagePath = await File('${directory.path}/image.png').create();
+            await imagePath.writeAsBytes(image);
+            final result = await ImageGallerySaver.saveImage(image, name: fileName);
+            if (!context.mounted) return;
+            if (result['isSuccess']) {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                content: Text('Download image success!'),
+                backgroundColor: Colors.green,
+              ));
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                content: Text('An error occurred!'),
+                backgroundColor: Colors.red,
+              ));
+            }
           }
-        }
-      });
-    } else {}
+        });
+      } else {}
+    }
   }
 
   @override
@@ -73,14 +82,16 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: () async {
                 await downloadImage(context);
               },
-              icon: const Icon(Icons.download, color: Colors.white,))
+              icon: const Icon(
+                Icons.download,
+                color: Colors.white,
+              ))
         ],
-        leading: const Icon(Icons.sort_rounded, color: Colors.white),
         backgroundColor: Colors.blue,
         elevation: 0,
         centerTitle: true,
         title: const Text(
-          'AI Background Remover',
+          'Remove Background Image',
           style: TextStyle(fontSize: 16, color: Colors.white),
         ),
       ),
@@ -92,7 +103,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   borderRadius: BorderRadius.circular(20),
                   child: BeforeAfter(
                     value: value,
-                    after: Image.file(File(imagePath)),
+                    after: kIsWeb ? Image.network(imagePath) : Image.file(File(imagePath)),
                     before: Screenshot(
                       controller: screenshotController,
                       child: Image.memory(image!),
@@ -108,9 +119,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     onTap: () {
                       pickImage();
                     },
-                    child: Image.file(
-                      File(imagePath),
-                    ),
+                    child: kIsWeb
+                        ? Image.network(imagePath)
+                        : Image.file(
+                            File(imagePath),
+                          ),
                   )
                 : DashedBorder(
                     padding: const EdgeInsets.all(40),
@@ -137,7 +150,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   setState(() {
                     isLoading = true;
                   });
-                  image = await Api.removeBg(imagePath);
+                  Uri url = Uri.parse("https://api.remove.bg/v1.0/removebg");
+                  image = kIsWeb ? await removeBgHelper(imagePath, imagePicker, key, url) : await removeBgHelper(imagePath, null, key, url);
                   if (image != null) {
                     removeBg = true;
                     isLoading = false;
