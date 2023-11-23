@@ -4,7 +4,9 @@ import 'dart:typed_data';
 import 'package:before_after/before_after.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:image_gallery_saver/image_gallery_saver.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:remove_bg_ai/api.dart';
 import 'package:remove_bg_ai/dashed_border.dart';
@@ -35,25 +37,31 @@ class _HomeScreenState extends State<HomeScreen> {
     } else {}
   }
 
-  downloadImage() async {
-    var perm = await Permission.storage.request();
+  Future<void> downloadImage(BuildContext context) async {
+    var perm = await Permission.photos.request();
     String fileName = "${DateTime.now().microsecondsSinceEpoch}";
     if (perm.isGranted) {
-      final directory = Directory("storage/emulated/0/");
-      if (!await directory.exists()) {
-        await directory.create(recursive: true);
-      }
-      await screenshotController.captureAndSave(
-        directory.path,
-        delay: const Duration(microseconds: 100),
-        fileName: fileName,
-        pixelRatio: 1.0,
-      );
-      print("Download to ${directory.path}");
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Download to ${directory.path}")));
-    }else{
-
-    }
+      await screenshotController.capture(delay: const Duration(milliseconds: 10)).then((Uint8List? image) async {
+        if (image != null) {
+          final directory = await getApplicationDocumentsDirectory();
+          final imagePath = await File('${directory.path}/image.png').create();
+          await imagePath.writeAsBytes(image);
+          final result = await ImageGallerySaver.saveImage(image, name: fileName);
+          if (!context.mounted) return;
+          if(result['isSuccess']){
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('Download image success!'),
+              backgroundColor: Colors.green,
+            ));
+          }else{
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('An error occurred!'),
+              backgroundColor: Colors.red,
+            ));
+          }
+        }
+      });
+    } else {}
   }
 
   @override
@@ -62,31 +70,38 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         actions: [
           IconButton(
-              onPressed: () async{
-                await downloadImage();
+              onPressed: () async {
+                await downloadImage(context);
               },
-              icon: const Icon(Icons.download))
+              icon: const Icon(Icons.download, color: Colors.white,))
         ],
-        leading: const Icon(Icons.sort_rounded),
+        leading: const Icon(Icons.sort_rounded, color: Colors.white),
         backgroundColor: Colors.blue,
         elevation: 0,
         centerTitle: true,
         title: const Text(
           'AI Background Remover',
-          style: TextStyle(fontSize: 16),
+          style: TextStyle(fontSize: 16, color: Colors.white),
         ),
       ),
       body: Center(
         child: removeBg
-            ? BeforeAfter(
-                after: Image.file(File(imagePath)),
-                before: Screenshot(
-                  controller: screenshotController,
-                  child: Image.memory(image!),
+            ? Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: BeforeAfter(
+                    value: value,
+                    after: Image.file(File(imagePath)),
+                    before: Screenshot(
+                      controller: screenshotController,
+                      child: Image.memory(image!),
+                    ),
+                    onValueChanged: (value) {
+                      setState(() => this.value = value);
+                    },
+                  ),
                 ),
-                onValueChanged: (value) {
-                  setState(() => this.value = value);
-                },
               )
             : loaded
                 ? GestureDetector(
@@ -123,7 +138,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     isLoading = true;
                   });
                   image = await Api.removeBg(imagePath);
-                  print(image);
                   if (image != null) {
                     removeBg = true;
                     isLoading = false;
